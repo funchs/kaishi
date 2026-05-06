@@ -3405,10 +3405,17 @@ main() {
     echo ""
 
     if $NO_BREW; then
+        # 判断当前 shell，给出正确的 source 命令
+        local current_rc="~/.bashrc"
+        case "$(basename "${SHELL:-/bin/bash}")" in
+            zsh) current_rc="~/.zshrc" ;;
+            bash) current_rc="~/.bashrc" ;;
+        esac
         echo -e "${YELLOW}已运行精简模式 (--no-brew):${NC}"
         echo "  - 跳过了 Homebrew 和默认 Shell 切换"
         echo "  - 配置已写入 ~/.bashrc 和 ~/.zshrc (如存在)"
-        echo "  - 让本次会话立即生效: source ~/.bashrc"
+        echo "  - 让本次会话立即生效: source $current_rc"
+        echo "  - 注意: 不要在 zsh 里 source ~/.bashrc (反之亦然)，不同 shell 语法不兼容"
         echo ""
     fi
 
