@@ -33,25 +33,25 @@
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://tinyurl.com/25n5uezk | bash
+curl -fsSL https://raw.githubusercontent.com/funchs/kaishi/main/install.sh | bash
 ```
 
 国内加速：
 
 ```bash
-curl -fsSL https://tinyurl.com/2xrksrcy | bash
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/funchs/kaishi/main/install.sh | bash
 ```
 
 ### Windows
 
 ```powershell
-irm https://tinyurl.com/225zvy2o | iex
+irm https://raw.githubusercontent.com/funchs/kaishi/main/install.ps1 | iex
 ```
 
 国内加速：
 
 ```powershell
-irm https://tinyurl.com/25pho3w9 | iex
+irm https://ghfast.top/https://raw.githubusercontent.com/funchs/kaishi/main/install.ps1 | iex
 ```
 
 ## 一键卸载
@@ -59,19 +59,19 @@ irm https://tinyurl.com/25pho3w9 | iex
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://tinyurl.com/25n5uezk | bash -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/funchs/kaishi/main/install.sh | bash -s -- --uninstall
 ```
 
 国内加速：
 
 ```bash
-curl -fsSL https://tinyurl.com/2xrksrcy | bash -s -- --uninstall
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/funchs/kaishi/main/install.sh | bash -s -- --uninstall
 ```
 
 ### Windows
 
 ```powershell
-irm https://tinyurl.com/25pho3w9 -OutFile $env:TEMP\i.ps1; & $env:TEMP\i.ps1 --uninstall
+irm https://ghfast.top/https://raw.githubusercontent.com/funchs/kaishi/main/install.ps1 -OutFile $env:TEMP\i.ps1; & $env:TEMP\i.ps1 --uninstall
 ```
 
 ## 用法
