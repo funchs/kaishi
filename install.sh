@@ -28,9 +28,11 @@ OS="$(uname -s)"          # Darwin / Linux
 ARCH="$(uname -m)"        # x86_64 / arm64 / aarch64
 DISTRO=""                 # ubuntu / debian / fedora / arch / ...
 PKG_MGR=""                # apt / dnf / yum / pacman / zypper
+NO_BREW=false             # Linux 精简模式：跳过 brew 和 zsh 切换，全部走原生包管理器
 
 is_macos() { [[ "$OS" == "Darwin" ]]; }
 is_linux() { [[ "$OS" == "Linux" ]]; }
+is_root()  { [[ "$EUID" -eq 0 ]]; }
 
 if is_linux; then
     if [[ -f /etc/os-release ]]; then
@@ -190,6 +192,7 @@ macOS / Linux 开发工具一键安装脚本
   ./install.sh --uninstall     交互式选择卸载工具
   ./install.sh --skip          跳过工具安装，仅修改配置
   ./install.sh --mirror        强制使用国内镜像加速
+  ./install.sh --no-brew       Linux 精简模式: 跳过 Homebrew 和 zsh 切换 (root/容器/服务器场景)
   ./install.sh <tool> ...      只安装指定工具
 
 环境变量:
@@ -245,6 +248,7 @@ parse_args() {
             --uninstall|-u) UNINSTALL_MODE=true; return ;;
             --skip|-s) SKIP_PREREQUISITES=true; return ;;
             --mirror|-m) USE_MIRROR=true ;;
+            --no-brew) NO_BREW=true ;;
             claude-provider)
                 SKIP_PREREQUISITES=true
                 SELECTED_TOOLS+=("claude-provider") ;;
@@ -420,6 +424,32 @@ source_zshrc() {
     fi
 }
 
+# 把一段配置块追加到合适的 shell rc 文件中。
+# - 默认写入 ~/.zshrc
+# - NO_BREW 模式（通常没装 zsh）下写入 ~/.bashrc
+# - 通过 marker 关键字判断是否已存在，已存在则跳过
+# 用法: append_shell_rc <marker> <<'EOF' ... EOF
+append_shell_rc() {
+    local marker="$1"
+    local content
+    content="$(cat)"
+    local files=()
+    if $NO_BREW || [[ ! -f "$HOME/.zshrc" && -f "$HOME/.bashrc" ]]; then
+        files+=("$HOME/.bashrc")
+        # 如果用户也有 .zshrc，顺便也写进去（双 shell 用户）
+        [[ -f "$HOME/.zshrc" ]] && files+=("$HOME/.zshrc")
+    else
+        files+=("$HOME/.zshrc")
+        # 如果用户也用 bash，bash 登录时也能用到
+        [[ -f "$HOME/.bashrc" ]] && files+=("$HOME/.bashrc")
+    fi
+    for rc in "${files[@]}"; do
+        if [[ ! -e "$rc" ]] || ! grep -q "$marker" "$rc" 2>/dev/null; then
+            printf '\n%s\n' "$content" >> "$rc"
+        fi
+    done
+}
+
 backup_if_exists() {
     local path="$1"
     if [[ -e "$path" ]]; then
@@ -436,6 +466,13 @@ check_prerequisites() {
     echo ""
     echo -e "  ${BOLD}正在准备基础环境 (首次较慢，请耐心等待)...${NC}"
     echo ""
+
+    # root 用户在 Linux 上自动启用 --no-brew (Homebrew 拒绝 root 安装)
+    if is_linux && is_root && ! $NO_BREW; then
+        warn "检测到当前是 root 用户，Homebrew 不允许 root 安装"
+        warn "自动启用 --no-brew 模式: 跳过 Homebrew 和 zsh 切换，全部走原生包管理器"
+        NO_BREW=true
+    fi
 
     # ── 步骤 1/7: 网络 ──────────────────────────────
     info "[1/7] 检测网络环境..."
@@ -483,7 +520,15 @@ check_prerequisites() {
     fi
 
     # ── 步骤 2/7 续: Zsh ──────────────────────────────
-    if command -v zsh &>/dev/null; then
+    if $NO_BREW; then
+        # 精简模式：zsh 改为可选；不切换默认 shell（避免 chsh 静默失败留隐患）
+        if command -v zsh &>/dev/null; then
+            ok "Zsh 已安装: $(zsh --version)"
+            info "精简模式不切换默认 Shell，可手动: chsh -s $(which zsh)"
+        else
+            info "精简模式跳过 Zsh 安装 (可后续手动: native_install zsh 或包管理器自行安装)"
+        fi
+    elif command -v zsh &>/dev/null; then
         ok "Zsh 已安装: $(zsh --version)"
         if [[ "$SHELL" == *zsh ]]; then
             ok "Zsh 已是默认 Shell"
@@ -520,7 +565,16 @@ check_prerequisites() {
 
     # ── 步骤 3/7: Homebrew ─────────────────────────────
     info "[3/7] 检查 Homebrew (用来安装软件的工具)..."
-    if command -v brew &>/dev/null; then
+    if $NO_BREW; then
+        info "精简模式跳过 Homebrew，所有 brew 包将走原生包管理器 ($PKG_MGR)"
+        # 清理可能残留的无效 shellenv (避免下次登录 zsh 报错)
+        if [[ -f "$HOME/.zshrc" ]] && grep -q 'linuxbrew' "$HOME/.zshrc" 2>/dev/null; then
+            if ! command -v brew &>/dev/null && [[ ! -f /home/linuxbrew/.linuxbrew/bin/brew && ! -f "$HOME/.linuxbrew/bin/brew" ]]; then
+                warn "检测到 ~/.zshrc 残留无效的 Linuxbrew shellenv，正在清理..."
+                sed_i '/linuxbrew/d' "$HOME/.zshrc"
+            fi
+        fi
+    elif command -v brew &>/dev/null; then
         ok "Homebrew 已安装: $(brew --version | head -1)"
     else
         info "未检测到 Homebrew，正在安装..."
@@ -536,18 +590,20 @@ check_prerequisites() {
         elif [[ -f "$HOME/.linuxbrew/bin/brew" ]]; then
             eval "$("$HOME/.linuxbrew/bin/brew" shellenv)"
         fi
-        ok "Homebrew 安装完成: $(brew --version | head -1)"
 
-        # Linux: 将 Homebrew 环境变量写入 shell 配置
-        if is_linux; then
-            local ZSHRC="$HOME/.zshrc"
-            if ! grep -q 'linuxbrew' "$ZSHRC" 2>/dev/null; then
-                cat >> "$ZSHRC" << 'BREW_LINUX_EOF'
-
+        # 验证 brew 真的可用，否则降级到 NO_BREW 模式 (避免后续静默失败)
+        if ! command -v brew &>/dev/null; then
+            err "Homebrew 安装失败，自动降级到精简模式 (--no-brew)"
+            NO_BREW=true
+        else
+            ok "Homebrew 安装完成: $(brew --version | head -1)"
+            # Linux: 将 Homebrew 环境变量写入 shell 配置 (zsh + bash 都覆盖)
+            if is_linux; then
+                append_shell_rc 'linuxbrew' << 'BREW_LINUX_EOF'
 # Homebrew (Linuxbrew)
 eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv 2>/dev/null || $HOME/.linuxbrew/bin/brew shellenv 2>/dev/null)"
 BREW_LINUX_EOF
-                ok "Homebrew 环境变量已写入 .zshrc"
+                ok "Homebrew 环境变量已写入 shell 配置"
             fi
         fi
     fi
@@ -558,8 +614,12 @@ BREW_LINUX_EOF
         ok "Git 已安装: $(git --version)"
     else
         info "正在安装 Git..."
-        brew install git
-        ok "Git 安装完成: $(git --version)"
+        if $NO_BREW; then
+            native_install git || err "Git 原生安装失败，请手动安装"
+        else
+            brew install git
+        fi
+        ok "Git 安装完成: $(git --version 2>/dev/null || echo '')"
     fi
 
     # ── 步骤 5/7: NVM ─────────────────────────────────
@@ -578,18 +638,14 @@ BREW_LINUX_EOF
         export NVM_DIR="$HOME/.nvm"
         [[ -s "$NVM_DIR/nvm.sh" ]] && source "$NVM_DIR/nvm.sh"
         ok "NVM 安装完成: $(nvm --version 2>/dev/null || echo '已安装')"
-        # 手动写入 .zshrc（因为上面用了 PROFILE=/dev/null 跳过了自动写入）
-        local ZSHRC="$HOME/.zshrc"
-        if ! grep -q 'NVM_DIR' "$ZSHRC" 2>/dev/null; then
-            cat >> "$ZSHRC" << 'NVM_EOF'
-
+        # 手动写入 shell 配置 (因为上面用了 PROFILE=/dev/null 跳过了自动写入)
+        append_shell_rc 'NVM_DIR' << 'NVM_EOF'
 # NVM (Node Version Manager)
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 NVM_EOF
-            ok "NVM 配置已写入 .zshrc"
-        fi
+        ok "NVM 配置已写入 shell 配置"
         need_source_zshrc=true
     fi
 
@@ -604,9 +660,14 @@ NVM_EOF
             nvm alias default lts/*
             ok "Node.js 安装完成: $(node --version)"
         else
-            info "NVM 不可用，通过 Homebrew 安装 Node.js..."
-            brew install node
-            ok "Node.js 安装完成: $(node --version)"
+            if $NO_BREW; then
+                info "NVM 不可用，通过原生包管理器安装 Node.js..."
+                native_install nodejs || warn "Node.js 原生安装失败，可手动: nvm install --lts"
+            else
+                info "NVM 不可用，通过 Homebrew 安装 Node.js..."
+                brew install node
+            fi
+            ok "Node.js 安装完成: $(node --version 2>/dev/null || echo '')"
         fi
     fi
 
@@ -616,24 +677,22 @@ NVM_EOF
         ok "Bun 已安装: $(bun --version)"
     else
         info "正在安装 Bun..."
-        if brew install oven-sh/bun/bun 2>&1; then
+        local bun_installed=false
+        if ! $NO_BREW && brew install oven-sh/bun/bun 2>&1; then
+            bun_installed=true
             ok "Bun 安装完成: $(bun --version)"
-        else
-            warn "Homebrew 安装失败，尝试官方脚本..."
+        fi
+        if ! $bun_installed; then
+            $NO_BREW || warn "Homebrew 安装失败，尝试官方脚本..."
             curl -fsSL https://bun.sh/install | bash
             export BUN_INSTALL="$HOME/.bun"
             export PATH="$BUN_INSTALL/bin:$PATH"
-            # 写入 .zshrc
-            local ZSHRC="$HOME/.zshrc"
-            if ! grep -q 'BUN_INSTALL' "$ZSHRC" 2>/dev/null; then
-                cat >> "$ZSHRC" << 'BUN_EOF'
-
+            append_shell_rc 'BUN_INSTALL' << 'BUN_EOF'
 # Bun
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 BUN_EOF
-                ok "Bun 配置已写入 .zshrc"
-            fi
+            ok "Bun 配置已写入 shell 配置"
             need_source_zshrc=true
             ok "Bun 安装完成: $(bun --version 2>/dev/null || echo '已安装')"
         fi
@@ -667,10 +726,74 @@ brew_cleanup_locks() {
     find "$cache_dir" -name '*incomplete*' -maxdepth 1 -delete 2>/dev/null
 }
 
+# brew formula → 原生包名映射 (NO_BREW 模式 fallback 使用)
+brew_to_native() {
+    local formula="$1"
+    case "$PKG_MGR" in
+        apt)
+            case "$formula" in
+                fd) echo "fd-find" ;;
+                ripgrep) echo "ripgrep" ;;
+                git-delta) echo "git-delta" ;;
+                sevenzip) echo "p7zip-full" ;;
+                ffmpegthumbnailer) echo "ffmpegthumbnailer" ;;
+                font-symbols-only-nerd-font) echo "" ;;  # 无对应包，走二进制下载
+                *) echo "$formula" ;;
+            esac ;;
+        dnf|yum)
+            case "$formula" in
+                fd) echo "fd-find" ;;
+                ripgrep) echo "ripgrep" ;;
+                git-delta) echo "git-delta" ;;
+                sevenzip) echo "p7zip" ;;
+                ffmpegthumbnailer) echo "ffmpegthumbnailer" ;;
+                imagemagick) echo "ImageMagick" ;;
+                font-symbols-only-nerd-font) echo "" ;;
+                *) echo "$formula" ;;
+            esac ;;
+        pacman)
+            case "$formula" in
+                fd) echo "fd" ;;
+                git-delta) echo "git-delta" ;;
+                sevenzip) echo "7zip" ;;
+                font-symbols-only-nerd-font) echo "ttf-nerd-fonts-symbols" ;;
+                *) echo "$formula" ;;
+            esac ;;
+        zypper)
+            case "$formula" in
+                fd) echo "fd" ;;
+                ripgrep) echo "ripgrep" ;;
+                git-delta) echo "git-delta" ;;
+                sevenzip) echo "p7zip" ;;
+                font-symbols-only-nerd-font) echo "" ;;
+                *) echo "$formula" ;;
+            esac ;;
+        *) echo "$formula" ;;
+    esac
+}
+
 # 带重试的 brew install (最多 3 次，每次失败自动清锁)
+# NO_BREW 模式下: 转发到原生包管理器，无对应包则 warn 跳过
 brew_install() {
     local formula="$1"
     local name="${2:-$formula}"
+
+    if $NO_BREW; then
+        local pkg
+        pkg="$(brew_to_native "$formula")"
+        if [[ -z "$pkg" ]]; then
+            warn "$name 在 $PKG_MGR 下无对应原生包，已跳过 (可手动从 GitHub release 下载)"
+            return
+        fi
+        info "正在安装 $name ($pkg) ..."
+        if native_install "$pkg" 2>&1; then
+            ok "$name 安装完成"
+        else
+            warn "$name 原生安装失败，已跳过"
+        fi
+        return
+    fi
+
     if brew list "$formula" &>/dev/null; then
         ok "$name 已安装"
         return
@@ -698,6 +821,11 @@ brew_install() {
 brew_install_cask() {
     local cask="$1"
     local name="${2:-$cask}"
+
+    if $NO_BREW; then
+        warn "$name 是 GUI 应用 (cask)，精简模式跳过"
+        return
+    fi
 
     if is_macos; then
         if brew list --cask "$cask" &>/dev/null; then
@@ -728,6 +856,84 @@ brew_install_cask() {
     fi
 }
 
+# 从 GitHub release 下载二进制并安装到 ~/.local/bin
+# 用于 Linux 上 native 包不可用的工具 (lazygit, yazi, delta 等)
+# 用法: github_bin_install <name> <repo> <asset-pattern> [extracted-binary-path]
+#   asset-pattern: 文件名模式，{ARCH} 会被替换为 x86_64 / aarch64 / arm64
+#   extracted-binary-path: 解压后二进制相对路径 (默认与 name 同名)
+github_bin_install() {
+    local name="$1"
+    local repo="$2"
+    local pattern="$3"
+    local bin_path="${4:-$name}"
+
+    if command -v "$name" &>/dev/null; then
+        ok "$name 已安装"
+        return
+    fi
+
+    local arch="$ARCH"
+    [[ "$arch" == "arm64" ]] && arch="aarch64"
+    pattern="${pattern//\{ARCH\}/$arch}"
+
+    info "从 GitHub release 下载 $name ..."
+    local api_url="https://api.github.com/repos/$repo/releases/latest"
+    local asset_url
+    asset_url=$(curl -fsSL "$api_url" 2>/dev/null \
+        | grep -oE "\"browser_download_url\": *\"[^\"]*$pattern[^\"]*\"" \
+        | head -1 \
+        | sed -E 's/.*"(https[^"]+)".*/\1/')
+    if [[ -z "$asset_url" ]]; then
+        warn "$name: 未在 GitHub release 中匹配到 $pattern (架构=$arch)，已跳过"
+        return 1
+    fi
+
+    # 走镜像加速
+    if $USE_MIRROR && [[ -n "$GITHUB_PROXY" ]]; then
+        asset_url="${GITHUB_PROXY}${asset_url}"
+    fi
+
+    local tmp
+    tmp="$(mktemp -d)"
+    local asset_file="$tmp/${asset_url##*/}"
+    if ! curl -fsSL -o "$asset_file" "$asset_url"; then
+        warn "$name: 下载失败 ($asset_url)"
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    mkdir -p "$HOME/.local/bin"
+    case "$asset_file" in
+        *.tar.gz|*.tgz) tar -xzf "$asset_file" -C "$tmp" ;;
+        *.tar.xz)       tar -xJf "$asset_file" -C "$tmp" ;;
+        *.zip)          unzip -q -o "$asset_file" -d "$tmp" ;;
+        *)              cp "$asset_file" "$tmp/$bin_path" ;;
+    esac
+
+    local found
+    found=$(find "$tmp" -type f -name "$(basename "$bin_path")" -perm -u+x 2>/dev/null | head -1)
+    [[ -z "$found" ]] && found=$(find "$tmp" -type f -name "$(basename "$bin_path")" 2>/dev/null | head -1)
+    if [[ -z "$found" ]]; then
+        warn "$name: 解压后未找到二进制 $bin_path，已跳过"
+        rm -rf "$tmp"
+        return 1
+    fi
+
+    install -m 0755 "$found" "$HOME/.local/bin/$name"
+    rm -rf "$tmp"
+
+    # 确保 ~/.local/bin 在 PATH 中
+    if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+        export PATH="$HOME/.local/bin:$PATH"
+        append_shell_rc 'HOME/.local/bin' << 'LOCALBIN_EOF'
+# 用户本地二进制目录
+export PATH="$HOME/.local/bin:$PATH"
+LOCALBIN_EOF
+    fi
+
+    ok "$name 安装完成: $HOME/.local/bin/$name"
+}
+
 # ── Shell 提示符配置 (安装终端时调用) ────────────────
 configure_shell_prompt() {
     echo ""
@@ -746,8 +952,14 @@ configure_shell_prompt() {
             ok "Starship 已安装"
         else
             info "正在安装 Starship..."
-            brew install starship
-            ok "Starship 安装完成"
+            if $NO_BREW; then
+                # 官方安装脚本，不依赖 brew
+                curl -sS "$(github_raw_url https://starship.rs/install.sh)" | sh -s -- --yes 2>/dev/null \
+                    || warn "Starship 官方脚本安装失败，可手动: curl -sS https://starship.rs/install.sh | sh"
+            else
+                brew install starship
+            fi
+            command -v starship &>/dev/null && ok "Starship 安装完成"
         fi
 
         # Nerd Font
@@ -840,13 +1052,19 @@ configure_shell_prompt() {
             10) ok "保持现有 Starship 配置" ;;
         esac
 
-        # 写入 .zshrc
-        local ZSHRC="$HOME/.zshrc"
-        if ! grep -q 'starship init zsh' "$ZSHRC" 2>/dev/null; then
-            [[ ! -f "$ZSHRC" ]] && touch "$ZSHRC"
-            echo -e '\n# Starship\neval "$(starship init zsh)"' >> "$ZSHRC"
-            ok "Starship 初始化已写入 .zshrc"
+        # 写入 shell 初始化 (zsh + bash 都覆盖)
+        if [[ -f "$HOME/.zshrc" ]] || ! $NO_BREW; then
+            append_shell_rc 'starship init zsh' << 'STARSHIP_ZSH_EOF'
+# Starship (zsh)
+eval "$(starship init zsh)"
+STARSHIP_ZSH_EOF
         fi
+        if [[ -f "$HOME/.bashrc" ]]; then
+            if ! grep -q 'starship init bash' "$HOME/.bashrc" 2>/dev/null; then
+                printf '\n# Starship (bash)\neval "$(starship init bash)"\n' >> "$HOME/.bashrc"
+            fi
+        fi
+        ok "Starship 初始化已写入 shell 配置"
 
         # Zsh 插件
         local ZSH_PLUGIN_DIR="${HOME}/.zsh/plugins"
@@ -1149,6 +1367,18 @@ install_yazi() {
     echo ""
     info "========== [2/13] Yazi =========="
     brew_install yazi "Yazi"
+    # native 失败 fallback (CentOS/RHEL 默认仓库没有 yazi)
+    if $NO_BREW && ! command -v yazi &>/dev/null; then
+        github_bin_install yazi sxyazi/yazi "{ARCH}-unknown-linux-gnu.zip" yazi || true
+        # yazi 包内还附带 ya 命令行
+        if [[ -f "$HOME/.local/bin/ya" ]] || command -v ya &>/dev/null; then
+            :
+        else
+            local tmp_ya
+            tmp_ya=$(find /tmp -type f -name 'ya' -path '*yazi*' 2>/dev/null | head -1)
+            [[ -n "$tmp_ya" ]] && install -m 0755 "$tmp_ya" "$HOME/.local/bin/ya" 2>/dev/null || true
+        fi
+    fi
 
     # 辅助依赖
     info "安装 Yazi 辅助依赖..."
@@ -1361,7 +1591,14 @@ install_lazygit() {
     echo ""
     info "========== [3/13] Lazygit =========="
     brew_install lazygit "Lazygit"
+    # native 失败 fallback (CentOS/RHEL 默认仓库没有 lazygit)
+    if $NO_BREW && ! command -v lazygit &>/dev/null; then
+        github_bin_install lazygit jesseduffield/lazygit "Linux_{ARCH}.tar.gz" lazygit || true
+    fi
     brew_install git-delta "delta (语法高亮 diff)"
+    if $NO_BREW && ! command -v delta &>/dev/null; then
+        github_bin_install delta dandavison/delta "{ARCH}-unknown-linux-gnu.tar.gz" delta || true
+    fi
 
     # Linux: 安装 xclip 用于剪贴板支持
     if is_linux && ! command -v xclip &>/dev/null && ! command -v xsel &>/dev/null && ! command -v wl-copy &>/dev/null; then
@@ -1481,27 +1718,31 @@ detect_claude_provider() {
     fi
 }
 
-# 将配置写入 .zshrc（替换已有的 Claude 配置块）
+# 将配置写入 shell 配置（替换已有的 Claude 配置块）
+# 默认写 .zshrc；NO_BREW 模式或已有 .bashrc 时同时写 .bashrc
 write_claude_config() {
     local config_content="$1"
-    local zshrc="$HOME/.zshrc"
-    touch "$zshrc"
-
-    # 如果已有配置块，先移除
-    if grep -q "$CLAUDE_BLOCK_START" "$zshrc"; then
-        local tmpfile
-        tmpfile=$(mktemp)
-        sed "/$CLAUDE_BLOCK_START/,/$CLAUDE_BLOCK_END/d" "$zshrc" > "$tmpfile"
-        mv "$tmpfile" "$zshrc"
+    local targets=("$HOME/.zshrc")
+    if $NO_BREW || [[ -f "$HOME/.bashrc" ]]; then
+        targets+=("$HOME/.bashrc")
     fi
 
-    # 追加新配置块
-    {
-        echo ""
-        echo "$CLAUDE_BLOCK_START"
-        echo "$config_content"
-        echo "$CLAUDE_BLOCK_END"
-    } >> "$zshrc"
+    for rc in "${targets[@]}"; do
+        touch "$rc"
+        # 如果已有配置块，先移除
+        if grep -q "$CLAUDE_BLOCK_START" "$rc"; then
+            local tmpfile
+            tmpfile=$(mktemp)
+            sed "/$CLAUDE_BLOCK_START/,/$CLAUDE_BLOCK_END/d" "$rc" > "$tmpfile"
+            mv "$tmpfile" "$rc"
+        fi
+        {
+            echo ""
+            echo "$CLAUDE_BLOCK_START"
+            echo "$config_content"
+            echo "$CLAUDE_BLOCK_END"
+        } >> "$rc"
+    done
 }
 
 # 读取用户输入（带默认值）
@@ -3162,6 +3403,14 @@ main() {
         echo "  VS Code   Catppuccin Latte 主题已应用"
     fi
     echo ""
+
+    if $NO_BREW; then
+        echo -e "${YELLOW}已运行精简模式 (--no-brew):${NC}"
+        echo "  - 跳过了 Homebrew 和默认 Shell 切换"
+        echo "  - 配置已写入 ~/.bashrc 和 ~/.zshrc (如存在)"
+        echo "  - 让本次会话立即生效: source ~/.bashrc"
+        echo ""
+    fi
 
     source_zshrc
 }
