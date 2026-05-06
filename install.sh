@@ -4,7 +4,7 @@
 # 支持: Ghostty / Yazi / Lazygit / Claude Code / OpenClaw / Hermes / OrbStack / Obsidian / Maccy / JDK / VS Code
 # 用法:
 #   全部安装:  ./install.sh
-#   选择安装:  ./install.sh ghostty yazi lazygit claude openclaw orbstack obsidian maccy jdk vscode
+#   选择安装:  ./install.sh ghostty yazi lazygit claude codex openclaw orbstack obsidian maccy jdk vscode
 #   查看帮助:  ./install.sh --help
 # ============================================================
 set -uo pipefail
@@ -200,7 +200,8 @@ macOS / Linux 开发工具一键安装脚本
   ghostty          GPU 加速终端模拟器
   yazi             终端文件管理器
   lazygit          终端 Git UI
-  claude           Claude Code (AI 编程助手)
+  claude           Claude Code (Anthropic AI 编程助手)
+  codex            Codex CLI (OpenAI AI 编程助手)
   openclaw         OpenClaw (本地 AI 助手)
   antigravity      Google Antigravity (AI 开发平台)
   orbstack         OrbStack (Docker 容器 & Linux 虚拟机, 仅 macOS)
@@ -214,6 +215,7 @@ macOS / Linux 开发工具一键安装脚本
 
 示例:
   ./install.sh ghostty yazi          只安装 Ghostty 和 Yazi
+  ./install.sh claude codex          只安装 AI 编程助手
   ./install.sh claude openclaw       只安装 AI 工具
   ./install.sh claude-provider       仅切换 Claude 提供商
   ./install.sh lark-mcp              配置飞书 MCP 私有化部署
@@ -224,7 +226,7 @@ EOF
 }
 
 # ── 工具定义 ──────────────────────────────────────────
-ALL_TOOLS=("ghostty" "yazi" "lazygit" "claude" "lark-mcp" "openclaw" "hermes" "antigravity" "orbstack" "obsidian" "maccy" "jdk" "vscode")
+ALL_TOOLS=("ghostty" "yazi" "lazygit" "claude" "codex" "lark-mcp" "openclaw" "hermes" "antigravity" "orbstack" "obsidian" "maccy" "jdk" "vscode")
 SELECTED_TOOLS=()
 SKIP_PREREQUISITES=false
 UNINSTALL_MODE=false
@@ -246,7 +248,7 @@ parse_args() {
             claude-provider)
                 SKIP_PREREQUISITES=true
                 SELECTED_TOOLS+=("claude-provider") ;;
-            ghostty|yazi|lazygit|claude|lark-mcp|openclaw|hermes|antigravity|orbstack|obsidian|maccy|jdk|vscode)
+            ghostty|yazi|lazygit|claude|codex|lark-mcp|openclaw|hermes|antigravity|orbstack|obsidian|maccy|jdk|vscode)
                 SELECTED_TOOLS+=("$arg") ;;
             *)
                 err "未知选项: $arg"
@@ -273,7 +275,8 @@ interactive_select() {
         "Ghostty      好看的终端窗口 (替代系统自带终端)"
         "Yazi         文件管理器 (在终端里浏览文件)"
         "Lazygit      Git 图形界面 (不用记 Git 命令)"
-        "Claude Code  AI 编程助手 (写代码/改 Bug)"
+        "Claude Code  AI 编程助手 (Anthropic)"
+        "Codex CLI    AI 编程助手 (OpenAI)"
         "Lark MCP    飞书文档接入 (私有化部署)"
         "OpenClaw     本地 AI 助手 (不联网也能用)"
         "Hermes       AI 智能体 (自动完成复杂任务)"
@@ -891,7 +894,7 @@ PLUGIN_EOF
 # ── Ghostty ───────────────────────────────────────────
 install_ghostty() {
     echo ""
-    info "========== [1/12] Ghostty =========="
+    info "========== [1/13] Ghostty =========="
     if is_macos; then
         brew_install_cask ghostty "Ghostty"
     else
@@ -1144,7 +1147,7 @@ GHOSTTY_EOF
 # ── Yazi ──────────────────────────────────────────────
 install_yazi() {
     echo ""
-    info "========== [2/12] Yazi =========="
+    info "========== [2/13] Yazi =========="
     brew_install yazi "Yazi"
 
     # 辅助依赖
@@ -1356,7 +1359,7 @@ function y() {
 # ── Lazygit ───────────────────────────────────────────
 install_lazygit() {
     echo ""
-    info "========== [3/12] Lazygit =========="
+    info "========== [3/13] Lazygit =========="
     brew_install lazygit "Lazygit"
     brew_install git-delta "delta (语法高亮 diff)"
 
@@ -2166,7 +2169,7 @@ export ANTHROPIC_API_KEY=\"${api_key}\""
 # ── Claude Code ───────────────────────────────────────
 install_claude() {
     echo ""
-    info "========== [4/12] Claude Code =========="
+    info "========== [4/13] Claude Code =========="
 
     if command -v claude &>/dev/null; then
         ok "Claude Code 已安装: $(claude --version 2>/dev/null || echo '已安装')"
@@ -2219,10 +2222,52 @@ install_claude() {
     source_zshrc
 }
 
+# ── Codex CLI ────────────────────────────────────────
+install_codex() {
+    echo ""
+    info "========== [5/13] Codex CLI =========="
+
+    if command -v codex &>/dev/null; then
+        ok "Codex CLI 已安装: $(codex --version 2>/dev/null || echo '已安装')"
+    else
+        info "正在安装 Codex CLI..."
+        local installed=false
+
+        # 优先 Homebrew (macOS / Linuxbrew 都支持官方 formula)
+        if command -v brew &>/dev/null; then
+            if brew install codex 2>/dev/null; then
+                ok "Codex CLI (Homebrew) 安装完成"
+                installed=true
+            fi
+        fi
+
+        # 后备: npm 全局安装
+        if ! $installed && command -v npm &>/dev/null; then
+            if npm install -g @openai/codex 2>/dev/null; then
+                ok "Codex CLI (npm) 安装完成"
+                installed=true
+            fi
+        fi
+
+        if ! $installed; then
+            err "Codex CLI 安装失败，请手动安装: https://github.com/openai/codex"
+        fi
+    fi
+
+    echo ""
+    info "Codex CLI 使用提示:"
+    echo "   codex                启动交互式会话"
+    echo "   codex \"问题\"         直接提问"
+    echo "   codex --help         查看完整帮助"
+    echo "   首次使用需要登录:     codex login"
+
+    source_zshrc
+}
+
 # ── OpenClaw ──────────────────────────────────────────
 install_openclaw() {
     echo ""
-    info "========== [5/12] OpenClaw =========="
+    info "========== [6/13] OpenClaw =========="
 
     if command -v openclaw &>/dev/null; then
         ok "OpenClaw 已安装"
@@ -2253,7 +2298,7 @@ install_openclaw() {
 # ── Hermes Agent ─────────────────────────────────────
 install_hermes() {
     echo ""
-    info "========== [6/12] Hermes Agent =========="
+    info "========== [7/13] Hermes Agent =========="
 
     if command -v hermes &>/dev/null; then
         ok "Hermes Agent 已安装: $(hermes --version 2>/dev/null || echo '已安装')"
@@ -2293,7 +2338,7 @@ install_hermes() {
 # ── Antigravity ──────────────────────────────────────
 install_antigravity() {
     echo ""
-    info "========== [7/12] Antigravity =========="
+    info "========== [8/13] Antigravity =========="
 
     if is_macos; then
         if brew list --cask antigravity &>/dev/null; then
@@ -2318,7 +2363,7 @@ install_antigravity() {
 # ── OrbStack ────────────────────────────────────────
 install_orbstack() {
     echo ""
-    info "========== [8/12] OrbStack =========="
+    info "========== [9/13] OrbStack =========="
 
     if is_macos; then
         brew_install_cask orbstack "OrbStack"
@@ -2375,7 +2420,7 @@ install_orbstack() {
 # ── Obsidian ──────────────────────────────────────────
 install_obsidian() {
     echo ""
-    info "========== [9/12] Obsidian =========="
+    info "========== [10/13] Obsidian =========="
 
     if is_macos; then
         brew_install_cask obsidian "Obsidian"
@@ -2519,7 +2564,7 @@ install_obsidian() {
 # ── Maccy ────────────────────────────────────────────
 install_maccy() {
     echo ""
-    info "========== [10/12] Maccy =========="
+    info "========== [11/13] Maccy =========="
 
     if is_macos; then
         brew_install_cask maccy "Maccy"
@@ -2557,7 +2602,7 @@ install_maccy() {
 # ── JDK (SDKMAN) ─────────────────────────────────────
 install_jdk() {
     echo ""
-    info "========== [11/12] JDK (SDKMAN) =========="
+    info "========== [12/13] JDK (SDKMAN) =========="
 
     # 安装 SDKMAN
     export SDKMAN_DIR="$HOME/.sdkman"
@@ -2648,7 +2693,7 @@ install_jdk() {
 # ── VS Code ──────────────────────────────────────────
 install_vscode() {
     echo ""
-    info "========== [12/12] VS Code =========="
+    info "========== [13/13] VS Code =========="
 
     if command -v code &>/dev/null; then
         ok "VS Code 已安装: $(code --version 2>/dev/null | head -1)"
@@ -2836,7 +2881,7 @@ uninstall_tools() {
     local -a installed_keys=()
     local idx=1
 
-    local tools_to_check=("ghostty:Ghostty" "yazi:Yazi" "lazygit:Lazygit" "claude:Claude Code" "openclaw:OpenClaw" "hermes:Hermes Agent" "docker:Docker" "obsidian:Obsidian" "maccy:Maccy/CopyQ" "java:JDK" "code:VS Code")
+    local tools_to_check=("ghostty:Ghostty" "yazi:Yazi" "lazygit:Lazygit" "claude:Claude Code" "codex:Codex CLI" "openclaw:OpenClaw" "hermes:Hermes Agent" "docker:Docker" "obsidian:Obsidian" "maccy:Maccy/CopyQ" "java:JDK" "code:VS Code")
 
     for entry in "${tools_to_check[@]}"; do
         local cmd="${entry%%:*}"
@@ -2914,6 +2959,16 @@ uninstall_tools() {
                 rm -f "$HOME/.local/bin/claude" 2>/dev/null
                 npm uninstall -g @anthropic-ai/claude-code 2>/dev/null
                 ok "Claude Code 已卸载"
+                ;;
+            codex)
+                info "卸载 Codex CLI..."
+                if command -v brew &>/dev/null; then
+                    brew uninstall codex 2>/dev/null
+                fi
+                if command -v npm &>/dev/null; then
+                    npm uninstall -g @openai/codex 2>/dev/null
+                fi
+                ok "Codex CLI 已卸载"
                 ;;
             openclaw)
                 info "卸载 OpenClaw..."
@@ -3029,6 +3084,7 @@ main() {
         is_selected "yazi"    && install_yazi
         is_selected "lazygit" && install_lazygit
         is_selected "claude"  && install_claude
+        is_selected "codex"   && install_codex
         is_selected "lark-mcp" && configure_lark_mcp
         is_selected "openclaw" && install_openclaw
         is_selected "hermes"   && install_hermes
@@ -3083,6 +3139,9 @@ main() {
     fi
     if is_selected "claude"; then
         echo "  Claude    ~/.zshrc (>>> Claude Code Provider Config >>> 块)"
+    fi
+    if is_selected "codex"; then
+        echo "  Codex     ~/.codex/ (登录后写入会话)"
     fi
     if is_selected "lark-mcp"; then
         echo "  Lark MCP  ~/.claude.json (飞书文档 MCP 服务器)"

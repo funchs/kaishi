@@ -3,7 +3,7 @@
 # 支持: Ghostty / Yazi / Lazygit / Claude Code / OpenClaw / Hermes Agent / Docker Desktop / Obsidian / Ditto / JDK / VS Code
 # 用法:
 #   全部安装:  .\install.ps1
-#   选择安装:  .\install.ps1 ghostty yazi lazygit claude openclaw hermes orbstack obsidian maccy jdk vscode
+#   选择安装:  .\install.ps1 ghostty yazi lazygit claude codex openclaw hermes orbstack obsidian maccy jdk vscode
 #   查看帮助:  .\install.ps1 --help
 # 要求: Windows 10+ / PowerShell 5.1+
 # ============================================================
@@ -84,7 +84,8 @@ Windows 开发工具一键安装脚本
   ghostty          GPU 加速终端模拟器
   yazi             终端文件管理器
   lazygit          终端 Git UI
-  claude           Claude Code (AI 编程助手)
+  claude           Claude Code (Anthropic AI 编程助手)
+  codex            Codex CLI (OpenAI AI 编程助手)
   openclaw         OpenClaw (本地 AI 助手)
   hermes           Hermes Agent (Nous Research 自学习 AI Agent)
   antigravity      Google Antigravity (AI 开发平台)
@@ -97,6 +98,7 @@ Windows 开发工具一键安装脚本
 
 示例:
   .\install.ps1 ghostty yazi          只安装 Ghostty 和 Yazi
+  .\install.ps1 claude codex          只安装 AI 编程助手
   .\install.ps1 claude openclaw       只安装 AI 工具
   .\install.ps1 claude-provider       仅切换 Claude 提供商
   .\install.ps1 --skip                跳过安装，进入配置菜单
@@ -106,7 +108,7 @@ Windows 开发工具一键安装脚本
 }
 
 # ── 工具定义 ──────────────────────────────────────────
-$ALL_TOOLS = @("ghostty", "yazi", "lazygit", "claude", "openclaw", "hermes", "antigravity", "orbstack", "obsidian", "maccy", "jdk", "vscode")
+$ALL_TOOLS = @("ghostty", "yazi", "lazygit", "claude", "codex", "openclaw", "hermes", "antigravity", "orbstack", "obsidian", "maccy", "jdk", "vscode")
 $script:SELECTED_TOOLS = @()
 $script:SKIP_PREREQUISITES = $false
 $script:UNINSTALL_MODE = $false
@@ -249,17 +251,18 @@ function Interactive-Select {
     Write-Host "   3) Lazygit       Git 图形界面 (不用记 Git 命令)" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  -- AI 工具 --" -ForegroundColor White
-    Write-Host "   4) Claude Code   AI 编程助手 (写代码/改 Bug)" -ForegroundColor Cyan
-    Write-Host "   5) OpenClaw      本地 AI 助手 (不联网也能用)" -ForegroundColor Cyan
-    Write-Host "   6) Hermes        AI 智能体 (自动完成复杂任务)" -ForegroundColor Cyan
-    Write-Host "   7) Antigravity   Google AI 平台" -ForegroundColor Cyan
+    Write-Host "   4) Claude Code   AI 编程助手 (Anthropic)" -ForegroundColor Cyan
+    Write-Host "   5) Codex CLI     AI 编程助手 (OpenAI)" -ForegroundColor Cyan
+    Write-Host "   6) OpenClaw      本地 AI 助手 (不联网也能用)" -ForegroundColor Cyan
+    Write-Host "   7) Hermes        AI 智能体 (自动完成复杂任务)" -ForegroundColor Cyan
+    Write-Host "   8) Antigravity   Google AI 平台" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  -- 常用软件 --" -ForegroundColor White
-    Write-Host "   8) Docker        容器工具 (运行服务器程序)" -ForegroundColor Cyan
-    Write-Host "   9) Obsidian      笔记软件 (写文档/知识管理)" -ForegroundColor Cyan
-    Write-Host "  10) Ditto         剪贴板历史 (找回之前复制的内容)" -ForegroundColor Cyan
-    Write-Host "  11) JDK           Java 环境 (Java 开发必备)" -ForegroundColor Cyan
-    Write-Host "  12) VS Code       代码编辑器 (自动装中文和主题)" -ForegroundColor Cyan
+    Write-Host "   9) Docker        容器工具 (运行服务器程序)" -ForegroundColor Cyan
+    Write-Host "  10) Obsidian      笔记软件 (写文档/知识管理)" -ForegroundColor Cyan
+    Write-Host "  11) Ditto         剪贴板历史 (找回之前复制的内容)" -ForegroundColor Cyan
+    Write-Host "  12) JDK           Java 环境 (Java 开发必备)" -ForegroundColor Cyan
+    Write-Host "  13) VS Code       代码编辑器 (自动装中文和主题)" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  ----------------------------------------" -ForegroundColor DarkGray
     Write-Host "   A) 全部安装 (推荐新电脑选这个)" -ForegroundColor Green
@@ -267,7 +270,7 @@ function Interactive-Select {
     Write-Host "   Q) 退出" -ForegroundColor Red
     Write-Host ""
     Write-Host "  提示: 直接输入数字选择，多个用逗号隔开" -ForegroundColor DarkGray
-    Write-Host "  举例: 输入 4,12 = 只装 AI 助手和编辑器" -ForegroundColor DarkGray
+    Write-Host "  举例: 输入 4,13 = 只装 AI 助手和编辑器" -ForegroundColor DarkGray
     Write-Host ""
     $input = Read-Host "请输入"
 
@@ -337,7 +340,7 @@ function Parse-Args {
                 $script:SKIP_PREREQUISITES = $true
                 $script:SELECTED_TOOLS += "claude-provider"
             }
-            { $_ -in @("ghostty","yazi","lazygit","claude","openclaw","hermes","antigravity","orbstack","obsidian","maccy","jdk","vscode") } {
+            { $_ -in @("ghostty","yazi","lazygit","claude","codex","openclaw","hermes","antigravity","orbstack","obsidian","maccy","jdk","vscode") } {
                 $script:SELECTED_TOOLS += $_
             }
             default {
@@ -604,7 +607,7 @@ function Configure-ShellPrompt {
 # ── Ghostty ───────────────────────────────────────────
 function Install-Ghostty {
     Write-Host ""
-    Info "========== [1/12] Ghostty =========="
+    Info "========== [1/13] Ghostty =========="
 
     if (Get-Command ghostty -ErrorAction SilentlyContinue) {
         Ok "Ghostty 已安装"
@@ -701,7 +704,7 @@ scrollback-limit = 25000000
 # ── Yazi ──────────────────────────────────────────────
 function Install-Yazi {
     Write-Host ""
-    Info "========== [2/12] Yazi =========="
+    Info "========== [2/13] Yazi =========="
 
     Scoop-Install -Package "yazi" -Name "Yazi"
 
@@ -878,7 +881,7 @@ function y {
 # ── Lazygit ───────────────────────────────────────────
 function Install-Lazygit {
     Write-Host ""
-    Info "========== [3/12] Lazygit =========="
+    Info "========== [3/13] Lazygit =========="
 
     Scoop-Install -Package "lazygit" -Name "Lazygit"
     Scoop-Install -Package "delta" -Name "delta (语法高亮 diff)"
@@ -1241,7 +1244,7 @@ function Configure-ClaudeProvider {
 # ── Claude Code ───────────────────────────────────────
 function Install-Claude {
     Write-Host ""
-    Info "========== [4/12] Claude Code =========="
+    Info "========== [4/13] Claude Code =========="
 
     if (Get-Command claude -ErrorAction SilentlyContinue) {
         Ok "Claude Code 已安装"
@@ -1292,10 +1295,66 @@ function Install-Claude {
     Write-Host "   首次使用需要登录:    claude login"
 }
 
+# ── Codex CLI ────────────────────────────────────────
+function Install-Codex {
+    Write-Host ""
+    Info "========== [5/13] Codex CLI =========="
+
+    if (Get-Command codex -ErrorAction SilentlyContinue) {
+        Ok "Codex CLI 已安装"
+    } else {
+        Info "正在安装 Codex CLI..."
+        $installed = $false
+
+        # 优先 npm 全局安装 (官方推荐方式)
+        if (Get-Command npm -ErrorAction SilentlyContinue) {
+            npm install -g @openai/codex 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                Ok "Codex CLI (npm) 安装完成"
+                $installed = $true
+            }
+        }
+
+        # 后备: scoop
+        if (-not $installed -and (Get-Command scoop -ErrorAction SilentlyContinue)) {
+            try {
+                scoop install codex 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    Ok "Codex CLI (scoop) 安装完成"
+                    $installed = $true
+                }
+            } catch {}
+        }
+
+        # 后备: winget
+        if (-not $installed -and (Get-Command winget -ErrorAction SilentlyContinue)) {
+            try {
+                Winget-Install -Id "OpenAI.Codex" -Name "Codex CLI"
+                if (Get-Command codex -ErrorAction SilentlyContinue) {
+                    $installed = $true
+                }
+            } catch {}
+        }
+
+        if (-not $installed) {
+            Err "Codex CLI 安装失败，请手动安装: https://github.com/openai/codex"
+        }
+    }
+
+    Refresh-Path
+
+    Write-Host ""
+    Info "Codex CLI 使用提示:"
+    Write-Host "   codex                启动交互式会话"
+    Write-Host '   codex "问题"         直接提问'
+    Write-Host "   codex --help         查看完整帮助"
+    Write-Host "   首次使用需要登录:     codex login"
+}
+
 # ── OpenClaw ──────────────────────────────────────────
 function Install-OpenClaw {
     Write-Host ""
-    Info "========== [5/12] OpenClaw =========="
+    Info "========== [6/13] OpenClaw =========="
 
     if (Get-Command openclaw -ErrorAction SilentlyContinue) {
         Ok "OpenClaw 已安装"
@@ -1318,7 +1377,7 @@ function Install-OpenClaw {
 # ── Hermes Agent ─────────────────────────────────────
 function Install-Hermes {
     Write-Host ""
-    Info "========== [6/12] Hermes Agent =========="
+    Info "========== [7/13] Hermes Agent =========="
 
     if (Get-Command hermes -ErrorAction SilentlyContinue) {
         Ok "Hermes Agent 已安装"
@@ -1355,7 +1414,7 @@ function Install-Hermes {
 # ── Antigravity ──────────────────────────────────────
 function Install-Antigravity {
     Write-Host ""
-    Info "========== [7/12] Antigravity =========="
+    Info "========== [8/13] Antigravity =========="
 
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         Winget-Install -Id "Google.Antigravity" -Name "Antigravity"
@@ -1372,7 +1431,7 @@ function Install-Antigravity {
 # ── Docker Desktop (OrbStack 替代) ────────────────────
 function Install-OrbStack {
     Write-Host ""
-    Info "========== [8/12] Docker Desktop =========="
+    Info "========== [9/13] Docker Desktop =========="
     Info "OrbStack 仅支持 macOS，Windows 上安装 Docker Desktop 替代"
 
     if (Get-Command docker -ErrorAction SilentlyContinue) {
@@ -1395,7 +1454,7 @@ function Install-OrbStack {
 # ── Obsidian ──────────────────────────────────────────
 function Install-Obsidian {
     Write-Host ""
-    Info "========== [9/12] Obsidian =========="
+    Info "========== [10/13] Obsidian =========="
 
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         Winget-Install -Id "Obsidian.Obsidian" -Name "Obsidian"
@@ -1476,7 +1535,7 @@ function Install-Obsidian {
 # ── Ditto (Maccy 替代) ────────────────────────────────
 function Install-Maccy {
     Write-Host ""
-    Info "========== [10/12] Ditto (剪贴板管理) =========="
+    Info "========== [11/13] Ditto (剪贴板管理) =========="
     Info "Maccy 仅支持 macOS，Windows 上安装 Ditto 替代"
 
     if (Get-Command winget -ErrorAction SilentlyContinue) {
@@ -1495,7 +1554,7 @@ function Install-Maccy {
 # ── JDK ──────────────────────────────────────────────
 function Install-JDK {
     Write-Host ""
-    Info "========== [11/12] JDK =========="
+    Info "========== [12/13] JDK =========="
 
     Write-Host ""
     Write-Host "选择 JDK 版本 (Eclipse Temurin):" -ForegroundColor White
@@ -1546,7 +1605,7 @@ function Install-JDK {
 # ── VS Code ──────────────────────────────────────────
 function Install-VSCode {
     Write-Host ""
-    Info "========== [12/12] VS Code =========="
+    Info "========== [13/13] VS Code =========="
 
     if (Get-Command code -ErrorAction SilentlyContinue) {
         Ok "VS Code 已安装"
@@ -1777,6 +1836,7 @@ function Uninstall-Tools {
         @("yazi",     "Yazi",           "yazi"),
         @("lazygit",  "Lazygit",        "lazygit"),
         @("claude",   "Claude Code",    ""),
+        @("codex",    "Codex CLI",      ""),
         @("openclaw", "OpenClaw",       ""),
         @("hermes",   "Hermes Agent",   ""),
         @("docker",   "Docker Desktop", ""),
@@ -1910,6 +1970,11 @@ function Uninstall-Tools {
                 if (Get-Command npm -ErrorAction SilentlyContinue) { npm uninstall -g @anthropic-ai/claude-code 2>$null }
                 $claudeBin = "$env:LOCALAPPDATA\Programs\claude-code"
                 if (Test-Path $claudeBin) { Remove-Item $claudeBin -Recurse -Force -ErrorAction SilentlyContinue }
+            }
+            "codex" {
+                if (Get-Command npm -ErrorAction SilentlyContinue) { npm uninstall -g @openai/codex 2>$null }
+                if (Get-Command scoop -ErrorAction SilentlyContinue) { scoop uninstall codex 2>&1 | Out-Null }
+                if (Get-Command winget -ErrorAction SilentlyContinue) { winget uninstall --id "OpenAI.Codex" --silent 2>$null }
             }
             "openclaw" {
                 if (Get-Command winget -ErrorAction SilentlyContinue) { winget uninstall --id "OpenClaw.OpenClaw" --silent 2>$null }
@@ -2050,6 +2115,7 @@ function Main {
             "yazi"        = { Install-Yazi }
             "lazygit"     = { Install-Lazygit }
             "claude"      = { Install-Claude }
+            "codex"       = { Install-Codex }
             "openclaw"    = { Install-OpenClaw }
             "hermes"      = { Install-Hermes }
             "antigravity" = { Install-Antigravity }
@@ -2102,7 +2168,8 @@ function Main {
         if (Is-Selected "ghostty")     { Write-Host "    Ghostty       终端窗口" -ForegroundColor Green }
         if (Is-Selected "yazi")        { Write-Host "    Yazi          文件管理器" -ForegroundColor Green }
         if (Is-Selected "lazygit")     { Write-Host "    Lazygit       Git 图形界面" -ForegroundColor Green }
-        if (Is-Selected "claude")      { Write-Host "    Claude Code   AI 编程助手" -ForegroundColor Green }
+        if (Is-Selected "claude")      { Write-Host "    Claude Code   AI 编程助手 (Anthropic)" -ForegroundColor Green }
+        if (Is-Selected "codex")       { Write-Host "    Codex CLI     AI 编程助手 (OpenAI)" -ForegroundColor Green }
         if (Is-Selected "openclaw")    { Write-Host "    OpenClaw      本地 AI 助手" -ForegroundColor Green }
         if (Is-Selected "hermes")      { Write-Host "    Hermes        AI 智能体" -ForegroundColor Green }
         if (Is-Selected "antigravity") { Write-Host "    Antigravity   Google AI 平台" -ForegroundColor Green }
