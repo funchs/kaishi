@@ -26,7 +26,6 @@ err()   { echo -e "${RED}[ERR ]${NC} $*"; }
 # ── 系统检测 ─────────────────────────────────────────
 OS="$(uname -s)"          # Darwin / Linux
 ARCH="$(uname -m)"        # x86_64 / arm64 / aarch64
-DISTRO=""                 # ubuntu / debian / fedora / arch / ...
 PKG_MGR=""                # apt / dnf / yum / pacman / zypper
 NO_BREW=false             # Linux 精简模式：跳过 brew 和 zsh 切换，全部走原生包管理器
 
@@ -35,9 +34,10 @@ is_linux() { [[ "$OS" == "Linux" ]]; }
 is_root()  { [[ "$EUID" -eq 0 ]]; }
 
 if is_linux; then
-    if [[ -f /etc/os-release ]]; then
-        DISTRO=$(. /etc/os-release && echo "${ID}")
-    fi
+    # DISTRO 检测预留（当前未使用）
+    # if [[ -f /etc/os-release ]]; then
+    #     DISTRO=$(. /etc/os-release && echo "${ID}")
+    # fi
     if command -v apt-get &>/dev/null; then
         PKG_MGR="apt"
     elif command -v dnf &>/dev/null; then
@@ -175,11 +175,7 @@ github_clone_url() {
     fi
 }
 
-# ── 启动时清理残留 brew 进程和锁文件 ─────────────────
-pkill -9 -f 'brew install\|brew fetch' 2>/dev/null
-if is_macos; then
-    find "$HOME/Library/Caches/Homebrew/downloads" -name '*incomplete*' -delete 2>/dev/null
-fi
+# 残留 brew 进程和锁文件由 brew_cleanup_locks() 在每次 brew 安装前清理
 
 # ── 帮助信息 ──────────────────────────────────────────
 show_help() {
@@ -418,12 +414,6 @@ is_selected() {
     return 1
 }
 
-source_zshrc() {
-    if [[ -f "$HOME/.zshrc" ]]; then
-        source "$HOME/.zshrc" 2>/dev/null || true
-    fi
-}
-
 # 把一段配置块追加到合适的 shell rc 文件中。
 # - 默认写入 ~/.zshrc
 # - NO_BREW 模式（通常没装 zsh）下写入 ~/.bashrc
@@ -452,10 +442,18 @@ append_shell_rc() {
 
 backup_if_exists() {
     local path="$1"
-    if [[ -e "$path" ]]; then
-        local backup="${path}.bak.$(date +%Y%m%d%H%M%S)"
-        warn "备份已有配置: $path -> $backup"
-        cp -r "$path" "$backup"
+    [[ -e "$path" ]] || return 0
+
+    local backup
+    backup="${path}.bak.$(date +%Y%m%d%H%M%S)"
+    warn "备份已有配置: $path -> $backup"
+    cp -r "$path" "$backup"
+
+    # 只保留最近 3 份备份 (时间戳后缀，glob 展开即按时间升序)
+    local backups=("${path}".bak.*)
+    local keep=3
+    if (( ${#backups[@]} > keep )); then
+        rm -rf "${backups[@]:0:${#backups[@]}-keep}"
     fi
 }
 
@@ -880,7 +878,7 @@ github_bin_install() {
     local api_url="https://api.github.com/repos/$repo/releases/latest"
     local asset_url
     asset_url=$(curl -fsSL "$api_url" 2>/dev/null \
-        | grep -oE "\"browser_download_url\": *\"[^\"]*$pattern[^\"]*\"" \
+        | grep -oE "\"browser_download_url\": *\"[^\"]*${pattern}[^\"]*\"" \
         | head -1 \
         | sed -E 's/.*"(https[^"]+)".*/\1/')
     if [[ -z "$asset_url" ]]; then
@@ -1359,7 +1357,6 @@ GHOSTTY_EOF
     # 安装终端时顺便配置 Shell 提示符
     configure_shell_prompt
 
-    source_zshrc
 }
 
 # ── Yazi ──────────────────────────────────────────────
@@ -1583,7 +1580,6 @@ function y() {
         ok "已添加 y 命令到 .zshrc"
     fi
 
-    source_zshrc
 }
 
 # ── Lazygit ───────────────────────────────────────────
@@ -1688,7 +1684,6 @@ LAZYGIT_EOF
         ok "Git Delta 已配置"
     fi
 
-    source_zshrc
 }
 
 # ── Claude Code 提供商配置 ────────────────────────────
@@ -2460,7 +2455,6 @@ install_claude() {
     echo "   claude -p \"问题\"    非交互模式 (管道友好)"
     echo "   首次使用需要登录:    claude login"
 
-    source_zshrc
 }
 
 # ── Codex CLI ────────────────────────────────────────
@@ -2502,7 +2496,6 @@ install_codex() {
     echo "   codex --help         查看完整帮助"
     echo "   首次使用需要登录:     codex login"
 
-    source_zshrc
 }
 
 # ── OpenClaw ──────────────────────────────────────────
@@ -2533,7 +2526,6 @@ install_openclaw() {
     echo "   openclaw            启动 OpenClaw"
     echo "   openclaw onboard    首次设置向导"
 
-    source_zshrc
 }
 
 # ── Hermes Agent ─────────────────────────────────────
@@ -2573,7 +2565,6 @@ install_hermes() {
     echo "   hermes gateway      启动消息网关 (Telegram/Discord 等)"
     echo "   hermes update       更新到最新版本"
 
-    source_zshrc
 }
 
 # ── Antigravity ──────────────────────────────────────
@@ -2598,7 +2589,6 @@ install_antigravity() {
         info "请访问 https://developers.google.com/ 获取 Linux 版本信息"
     fi
 
-    source_zshrc
 }
 
 # ── OrbStack ────────────────────────────────────────
@@ -2655,7 +2645,6 @@ install_orbstack() {
         echo "   docker compose up -d       启动容器编排"
     fi
 
-    source_zshrc
 }
 
 # ── Obsidian ──────────────────────────────────────────
@@ -2715,7 +2704,6 @@ install_obsidian() {
             ;;
         3)
             ok "跳过 Excalidraw 插件安装"
-            source_zshrc
             return
             ;;
         *)
@@ -2725,7 +2713,6 @@ install_obsidian() {
 
     if [[ -z "$vault_path" ]]; then
         warn "Vault 路径为空，跳过插件安装"
-        source_zshrc
         return
     fi
 
@@ -2799,7 +2786,6 @@ install_obsidian() {
     echo "   打开 Vault: $vault_path"
     echo "   Excalidraw: 在笔记中使用 Ctrl/Cmd+P 搜索 Excalidraw 命令"
 
-    source_zshrc
 }
 
 # ── Maccy ────────────────────────────────────────────
@@ -2837,7 +2823,6 @@ install_maccy() {
         echo "   可在设置中自定义快捷键和规则"
     fi
 
-    source_zshrc
 }
 
 # ── JDK (SDKMAN) ─────────────────────────────────────
@@ -2928,7 +2913,6 @@ install_jdk() {
     echo "   sdk use java <ver>       临时切换版本"
     echo "   sdk default java <ver>   设置默认版本"
 
-    source_zshrc
 }
 
 # ── VS Code ──────────────────────────────────────────
@@ -3104,7 +3088,6 @@ VSCODE_EOF
     echo "   主题: Catppuccin Latte (已自动应用)"
     echo "   切换主题: Ctrl/Cmd+K Ctrl/Cmd+T"
 
-    source_zshrc
 }
 
 # ══════════════════════════════════════════════════════
@@ -3311,7 +3294,6 @@ main() {
     if is_selected "claude-provider"; then
         echo ""
         configure_claude_provider
-        source_zshrc
         return
     fi
 
@@ -3406,10 +3388,10 @@ main() {
 
     if $NO_BREW; then
         # 判断当前 shell，给出正确的 source 命令
-        local current_rc="~/.bashrc"
+        local current_rc="$HOME/.bashrc"
         case "$(basename "${SHELL:-/bin/bash}")" in
-            zsh) current_rc="~/.zshrc" ;;
-            bash) current_rc="~/.bashrc" ;;
+            zsh) current_rc="$HOME/.zshrc" ;;
+            bash) current_rc="$HOME/.bashrc" ;;
         esac
         echo -e "${YELLOW}已运行精简模式 (--no-brew):${NC}"
         echo "  - 跳过了 Homebrew 和默认 Shell 切换"
@@ -3419,7 +3401,6 @@ main() {
         echo ""
     fi
 
-    source_zshrc
 }
 
 main "$@"
